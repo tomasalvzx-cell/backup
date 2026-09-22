@@ -1,0 +1,37 @@
+name: Backup Base de Datos SQL
+
+on:
+  schedule:
+    # Se ejecuta todos los días a las 2:00 AM UTC (ajusta la hora a tu preferencia)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Esto te permite ejecutarlo manualmente con un botón desde GitHub
+
+jobs:
+  backup:
+    runs-on: windows-latest # GitHub enciende una PC con Windows en la nube
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Instalar SqlPackage
+        run: |
+          choco install sqlpackage -y
+
+      - name: Ejecutar Backup desde la Base de Datos Pública
+        env:
+          # Aquí leemos la contraseña desde los "Secrets" de GitHub para que no quede expuesta
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          # Aquí conectamos a tu base de datos pública usando SqlPackage
+          # Reemplaza los datos entre <> con tu información real
+          SqlPackage.exe /Action:Export `
+            /SourceConnectionString:"Server=tcp:<tu_servidor_publico>.database.windows.net,1433;Initial Catalog=<tu_base_de_datos>;User ID=<tu_usuario>;Password=$env:DB_PASSWORD;Encrypt=True;TrustServerCertificate=False;" `
+            /TargetFile:"${{ github.workspace }}\backup.bacpac"
+
+      - name: Guardar el archivo .bacpac como Artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-bd
+          # Aquí está la respuesta a tu pregunta: usamos la ruta de la máquina virtual
+          path: ${{ github.workspace }}\backup.bacpac
