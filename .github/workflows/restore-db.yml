@@ -1,0 +1,57 @@
+name: Restore Base de Datos SQL
+
+on:
+  # Solo se ejecuta manualmente desde GitHub con un botón
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: 'ID de la ejecución del backup (déjalo vacío para usar el último backup exitoso)'
+        required: false
+        default: ''
+
+jobs:
+  restore:
+    runs-on: windows-latest
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Instalar SqlPackage
+        run: |
+          choco install sqlpackage -y
+
+      - name: Descargar el último backup exitoso
+        uses: actions/download-artifact@v4
+        with:
+          name: backup-bd
+          path: ${{ github.workspace }}
+          # Si no se especifica un run_id, descarga el último backup exitoso
+          run-id: ${{ inputs.artifact_run_id || '' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verificar que el backup se descargó
+        run: |
+          Get-ChildItem -Path ${{ github.workspace }} -Recurse
+          if (-not (Test-Path "${{ github.workspace }}\backup.bacpac")) {
+            Write-Error "❌ No se encontró el archivo backup.bacpac"
+            exit 1
+          }
+
+      - name: Restaurar en la Nueva Base de Datos
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          $connString = "Server=tcp:$env:DB_HOST,$env:DB_PORT;Initial Catalog=$env:DB_NAME;User ID=$env:DB_USERNAME;Password=$env:DB_PASSWORD;Encrypt=True;TrustServerCertificate=False;"
+          
+          Write-Host "🔄 Iniciando restauración en: $env:DB_HOST / $env:DB_NAME"
+          
+          SqlPackage.exe /Action:Import `
+            /SourceFile:"${{ github.workspace }}\backup.bacpac" `
+            /TargetConnectionString:"$connString"
+          
+          Write-Host "✅ Restauración completada exitosamente"
